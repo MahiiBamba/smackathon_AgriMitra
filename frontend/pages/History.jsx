@@ -1,101 +1,114 @@
 import React, { useEffect, useState } from "react";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+
+// Fix Leaflet default icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+});
 
 const History = () => {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("http://192.168.137.250:5000/heatmap");
+      const text = await response.text();
+
+      let jsonData;
+      try {
+        jsonData = JSON.parse(text);
+      } catch (err) {
+        console.error("Response was not JSON, got HTML instead:", text);
+        setError("Failed to parse data from server. Check the backend response.");
+        return;
+      }
+
+      const validData = jsonData
+        .filter(
+          (item) =>
+            item.latitude &&
+            item.longitude &&
+            !isNaN(item.latitude) &&
+            !isNaN(item.longitude)
+        )
+        .map((item) => ({
+          id: item.id,
+          lat: parseFloat(item.latitude),
+          lng: parseFloat(item.longitude),
+          disease: item.predicted_class,
+          severity: item.severity,
+          confidence: item.confidence,
+          timestamp: item.timestamp,
+        }))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));;
 
 
-const dummyHistory = [
-  {
-    disease: "Leaf Blight",
-    location: { lat: 28.7041, lng: 77.1025 }, // Delhi
-    date: "2025-08-20T14:30:00Z",
-  },
-  {
-    disease: "Powdery Mildew",
-    location: { lat: 19.076, lng: 72.8777 }, // Mumbai
-    date: "2025-08-19T09:45:00Z",
-  },
-  {
-    disease: "Root Rot",
-    location: { lat: 13.0827, lng: 80.2707 }, // Chennai
-    date: "2025-08-18T18:15:00Z",
-  },
-  {
-    disease: "Rust Fungus",
-    location: { lat: 22.5726, lng: 88.3639 }, // Kolkata
-    date: "2025-08-15T11:20:00Z",
-  },
-  {
-    disease: "Bacterial Wilt",
-    location: { lat: 12.9716, lng: 77.5946 }, // Bangalore
-    date: "2025-08-10T16:50:00Z",
-  },
-];
+      console.log(validData);
+      setData(validData);
 
+      if (validData.length === 0) {
+        setError("No valid data points found to display.");
+      }
+    } catch (err) {
+      console.error("Error fetching history:", err);
+      setError("Error fetching data. Please check your network and backend server.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Fetch data from backend
-    const fetchHistory = async () => {
-      try {
-        const res = await fetch("http://localhost:5000/history"); // your API endpoint
-        const data = await res.json();
-
-        // Sort by date (newest first)
-        const sortedData = data.sort(
-          (a, b) => new Date(b.date) - new Date(a.date)
-        );
-
-        setHistory(sortedData);
-      } catch (err) {
-        console.error("Error fetching history:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchHistory();
+    fetchData();
   }, []);
 
-/*
-useEffect(() => {
-  // Simulate backend fetch
-  const sortedData = dummyHistory.sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
-  );
-  setHistory(sortedData);
-  setLoading(false);
-}, []);
-
-*/
-
   return (
-    <div className="flex flex-col items-center py-8 px-4">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Prediction History</h1>
+    <div className="flex flex-col items-center py-8 px-4 bg-white/20 min-h-screen shadow-xl rounded-lg backdrop-blur-lg">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">History </h1>
 
-      {loading ? (
-        <p className="text-gray-600">Loading history...</p>
-      ) : history.length === 0 ? (
-        <p className="text-gray-500">No history available.</p>
-      ) : (
-        <div className="w-full max-w-2xl space-y-4">
-          {history.map((entry, index) => (
-            <div
-              key={index}
-              className="p-4 bg-white shadow-md rounded-lg border"
-            >
-              <h2 className="text-lg font-semibold text-blue-700">
-                {entry.disease}
-              </h2>
-              <p className="text-gray-700">
-                📍 Location: {entry.location.lat}, {entry.location.lng}
-              </p>
-              <p className="text-gray-500 text-sm">
-                📅 {new Date(entry.date).toLocaleString()}
-              </p>
-            </div>
-          ))}
-        </div>
+      {loading && <p className="text-gray-600">Loading data...</p>}
+      {error && (
+        <p className="text-red-600 font-semibold mb-4">{error}</p>
       )}
+
+      <div className="w-full max-w-2xl mt-8">
+        <h2 className="text-2xl font-semibold text-gray-700 mb-4">Data Points</h2>
+        <ul className="flex flex-col gap-4">
+          {data.length > 0 ? (
+            data.map((item) => (
+              <li
+                key={item.id}
+                className="bg-white p-4 rounded-lg shadow border border-gray-200"
+              >
+                <h3 className="font-bold text-lg text-blue-600">
+                  {item.disease}
+                </h3>
+                <p className="text-gray-600 flex">
+                  <span className="font-bold">Location:&nbsp; </span> {item.lat.toFixed(2)}, {item.lng.toFixed(2)}
+                </p>
+                <p className="text-gray-600">
+                  <span className="font-medium">Severity:</span>{" "}
+                  {item.severity || "N/A"}
+                </p>
+                <p className="text-gray-500 text-sm">
+                  {new Date(item.timestamp).toLocaleString()}
+                </p>
+              </li>
+            ))
+          ) : (
+            <p className="text-gray-500 text-center">
+              No data to display. Try fetching data or check your backend server.
+            </p>
+          )}
+        </ul>
+      </div>
     </div>
   );
 };
